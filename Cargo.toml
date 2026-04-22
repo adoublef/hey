@@ -1,0 +1,12 @@
+[package]
+name = "hey"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8.9", features = [] }
+clap = { version = "4.6.1", features = ["derive", "std"] }
+derive_more = { version = "2.1.1", features = ["std", "from", "error", "display", "from", "into"]}
+http = { version = "1.4.0", features = ["std"] }
+tokio = { version = "1.52.1", features = ["rt-multi-thread", "signal"]}
+tokio-util = { version = "0.7.18", features = ["time"] }
