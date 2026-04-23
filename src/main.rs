@@ -4,6 +4,7 @@ use hey::{
     os::signal,
     runtime::{self},
 };
+use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use std::{env, ffi::OsString, process::ExitCode, time::Duration};
 use tokio::{net::TcpListener, select};
 use tokio_util::{sync::CancellationToken, time::FutureExt as _};
@@ -19,6 +20,7 @@ fn main() -> ExitCode {
     let args = env::args_os();
     let getenv = |key: &str| env::var_os(key);
 
+    // if we impl Termination, this gets simplier
     let (msg, code) = match run(args, getenv) {
         Ok(_) => (None, ExitCode::SUCCESS),
         Err(Parse(e)) => (Some(e.to_string()), ExitCode::from(2)),
@@ -50,9 +52,27 @@ where
                     .map_err(ParseError::Int)?,
                 _ => cfg.port,
             };
-            serve(cfg)?
+            cfg.dsn = match getenv("DATABASE_URL") {
+                // given its a string, i need to do something fancy here
+                Some(dsn) if cfg.dsn.is_empty() => dsn
+                    .to_str()
+                    .ok_or(ParseError::Utf8("DATABASE_URL"))?
+                    .to_string(),
+                _ => cfg.dsn,
+            };
+            cfg.run()
         }
-    }
+        Migrate(mut cfg) => {
+            cfg.dsn = match getenv("DATABASE_URL") {
+                Some(dsn) if cfg.dsn.is_empty() => dsn
+                    .to_str()
+                    .ok_or(ParseError::Utf8("DATABASE_URL"))?
+                    .to_string(),
+                _ => cfg.dsn,
+            };
+            cfg.run()
+        }
+    }?;
 
     Ok(())
 }
@@ -66,54 +86,95 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Serve(Serve),
+    Migrate(Migrate),
 }
 
 #[derive(Debug, Args)]
 struct Serve {
     #[clap(long, default_value_t = DEFAULT_PORT)]
     port: u16,
+    #[clap(long, default_value_t)]
+    dsn: String,
 }
 
-fn serve(cfg: Serve) -> Result<()> {
-    runtime::build()
-        // runtime error#1
-        .map_err(|e| Error::Other(e.to_string()))?
-        .block_on(async {
-            // create listener
-            let listener = TcpListener::bind(("0.0.0.0", cfg.port)).await?;
-            let _addr = listener.local_addr()?;
-            // todo: logger
+impl Serve {
+    fn run(&self) -> Result<()> {
+        runtime::build()
+            // runtime error#1
+            .map_err(|e| Error::Other(e.to_string()))?
+            .block_on(async {
+                let conn = SqlitePool::connect_with(
+                    SqliteConnectOptions::new()
+                        .filename(&self.dsn) // this does not need to be set
+                        .create_if_missing(true),
+                )
+                .await?; // missing name?
 
-            let token = CancellationToken::new();
+                // create listener
+                let listener = TcpListener::bind(("0.0.0.0", self.port)).await?;
+                let _addr = listener.local_addr()?;
+                // todo: logger
 
-            let server_token = token.child_token();
-            let mut server_result = tokio::spawn(async move {
-                axum::serve(listener, app())
-                    .with_graceful_shutdown(async move { server_token.cancelled().await })
-                    .await
-            });
+                let token = CancellationToken::new();
 
-            select! {
-                biased;
-                Ok(res) = &mut server_result => match res {
-                    Ok(()) => panic!("server shutdown prematurely"), // todo: return error instead
-                    Err(error) => return Err(error)?,
-                },
-                res = signal::shutdown() => match res {
-                    Ok(()) => token.cancel(),
-                    Err(error) => return Err(error),
-                },
-            }
+                let server_token = token.child_token();
+                let mut server_result = tokio::spawn(async move {
+                    axum::serve(listener, app(conn))
+                        .with_graceful_shutdown(async move { server_token.cancelled().await })
+                        .await
+                });
 
-            match server_result.timeout(DEFAULT_SHUTDOWN_TIMEOUT).await {
-                Ok(Ok(Ok(()))) => Ok(()),
-                Ok(Ok(Err(error))) => Err(error)?,
-                Ok(Err(_)) => unreachable!("we never cancel token"),
-                Err(_) => Ok(()),
-            }
-        })
-        // runtime error#2
-        .map_err(|e| Error::Other(e.to_string()))
+                select! {
+                    biased;
+                    Ok(res) = &mut server_result => match res {
+                        Ok(()) => panic!("server shutdown prematurely"), // todo: return error instead
+                        Err(error) => return Err(error)?,
+                    },
+                    res = signal::shutdown() => match res {
+                        Ok(()) => token.cancel(),
+                        Err(error) => return Err(error),
+                    },
+                }
+
+                match server_result.timeout(DEFAULT_SHUTDOWN_TIMEOUT).await {
+                    Ok(Ok(Ok(()))) => Ok(()),
+                    Ok(Ok(Err(error))) => Err(error)?,
+                    Ok(Err(_)) => unreachable!("we never cancel token"),
+                    Err(_) => Ok(()),
+                }
+            })
+            // runtime error#2
+            .map_err(|e| Error::Other(e.to_string()))
+    }
+}
+
+#[derive(Debug, Args)]
+struct Migrate {
+    #[clap(long, default_value_t)] // this is kinda deprecated
+    dsn: String,
+}
+
+impl Migrate {
+    fn run(&self) -> Result<()> {
+        runtime::build()
+            // runtime error#1
+            .map_err(|e| Error::Other(e.to_string()))?
+            .block_on(async {
+                let conn = SqlitePool::connect_with(
+                    SqliteConnectOptions::new()
+                        .filename(&self.dsn) // this does not need to be set
+                        .create_if_missing(true),
+                )
+                .await?; // missing name?
+
+                let mut conn = conn.acquire().await?;
+
+                let _result = sqlx::query("SELECT 1").execute(&mut *conn).await?;
+
+                Ok::<_, Box<dyn std::error::Error>>(())
+            })
+            .map_err(|e| Error::Other(e.to_string()))
+    }
 }
 
 type Result<T, E = crate::error::Error> = core::result::Result<T, E>;
