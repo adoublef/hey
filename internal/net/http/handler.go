@@ -1,6 +1,7 @@
 package http
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,7 +16,7 @@ func IsServeClosed(err error) bool {
 	return errors.Is(err, http.ErrServerClosed)
 }
 
-func Handler() http.Handler {
+func Handler(db *sql.DB) http.Handler {
 	mux := http.NewServeMux()
 	h := func(pattern string, handler http.Handler) {
 		mux.Handle(pattern, handler)
@@ -23,6 +24,7 @@ func Handler() http.Handler {
 
 	h("GET /", status.Code(http.StatusTeapot))
 	h("GET /hey", handleHey())
+	h("GET /ok", handleOk(db))
 	return mux
 }
 
@@ -30,5 +32,11 @@ func handleHey() httputil.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		fmt.Fprintf(w, "Hey, 👋🏿!")
 		return nil
+	}
+}
+
+func handleOk(db *sql.DB) httputil.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		return db.QueryRowContext(r.Context(), "SELECT 1").Err()
 	}
 }

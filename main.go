@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
@@ -41,7 +43,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stderr 
 	}
 
 	var cc = map[string]cmd{
-		"serve": new(serveCmd),
+		"serve":   new(serveCmd),
+		"migrate": new(migrateCmd),
 	}
 	c, ok := cc[name]
 	if !ok {
