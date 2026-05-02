@@ -15,6 +15,7 @@ import (
 
 	"github.com/adoublef/hey/internal/encoding/html"
 	"github.com/adoublef/hey/internal/net/http/status"
+	"go.adoublef.dev/xiota"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -22,7 +23,7 @@ type Client struct {
 	C *http.Client
 }
 
-func (c *Client) Series(ctx context.Context, u *url.URL) io.ReadCloser {
+func (c *Client) Series(ctx context.Context, u *url.URL, comp Compress) io.ReadCloser {
 	g, ctx := errgroup.WithContext(ctx)
 
 	urls := make(chan *url.URL)
@@ -65,7 +66,7 @@ func (c *Client) Series(ctx context.Context, u *url.URL) io.ReadCloser {
 		for u := range urls {
 			fh := &zip.FileHeader{
 				Name:     strconv.Itoa(count) + ".zip",
-				Method:   zip.Store,
+				Method:   uint16(Store * 8),
 				Modified: time.Now().UTC(),
 			}
 			w, err1 := zw.CreateHeader(fh)
@@ -81,7 +82,7 @@ func (c *Client) Series(ctx context.Context, u *url.URL) io.ReadCloser {
 	return pr
 }
 
-func (c *Client) Chapter(ctx context.Context, u *url.URL) io.ReadCloser {
+func (c *Client) Chapter(ctx context.Context, u *url.URL, comp Compress) io.ReadCloser {
 	g, ctx := errgroup.WithContext(ctx)
 
 	urls := make(chan *url.URL)
@@ -169,7 +170,7 @@ func (c *Client) Chapter(ctx context.Context, u *url.URL) io.ReadCloser {
 		for src := range bufs {
 			fh := &zip.FileHeader{
 				Name:     strconv.Itoa(count) + ".jpeg",
-				Method:   zip.Store,
+				Method:   uint16(Store * 8),
 				Modified: time.Now().UTC(),
 			}
 			w, err1 := zw.CreateHeader(fh)
@@ -185,4 +186,33 @@ func (c *Client) Chapter(ctx context.Context, u *url.URL) io.ReadCloser {
 
 	go func() { pw.CloseWithError(g.Wait()) }()
 	return pr
+}
+
+type Compress uint8
+
+const (
+	Store Compress = iota
+	Deflate
+)
+
+var compression = [...]string{
+	"store",
+	"deflate",
+}
+
+func (s Compress) String() string {
+	return xiota.Format(s, compression[:], Store, Deflate, 0)
+}
+
+func (s *Compress) UnmarshalText(p []byte) (err error) {
+	*s, err = ParseCompress(string(p))
+	return
+}
+
+func (s Compress) MarshalText() ([]byte, error) {
+	return []byte(s.String()), nil
+}
+
+func ParseCompress(s string) (Compress, error) {
+	return xiota.Parse[Compress](compression[:], s, 0)
 }
