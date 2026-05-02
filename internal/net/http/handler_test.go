@@ -2,10 +2,8 @@ package http_test
 
 import (
 	"archive/zip"
-	"context"
 	"encoding/csv"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -50,16 +48,9 @@ func TestHandler_handleMachine(t *testing.T) {
 			d = &machine.DB{
 				RWC: pool,
 			}
-
-			m = &migrator{
-				pool: pool,
-				fsys: []fs.FS{machine.FS},
-			}
 		)
 
-		err := m.up(ctx)
-		ok(t, err)
-		t.Cleanup(func() { m.down(context.Background()) })
+		migrations(t, pool, machine.FS)
 
 		c, url := newClient(t, d, nil, nil)
 
