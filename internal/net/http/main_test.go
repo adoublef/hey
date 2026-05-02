@@ -239,5 +239,5 @@ func cbzClient(t testing.TB, chapters, images int) (client *cbz.Client, baseURL 
 	s := httptest.NewServer(mux)
 	t.Cleanup(s.Close)
 
-	return &cbz.Client{s.Client()}, s.URL
+	return &cbz.Client{C: s.Client()}, s.URL
 }
