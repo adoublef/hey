@@ -2,15 +2,18 @@ package http_test
 
 import (
 	"archive/zip"
-	"database/sql"
+	"context"
 	"encoding/csv"
+	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/adoublef/hey/internal/cbz"
 	"github.com/adoublef/hey/internal/eve"
+	"github.com/adoublef/hey/internal/machine"
 	. "github.com/adoublef/hey/internal/net/http"
 	"github.com/krolaw/zipstream"
 )
@@ -34,23 +37,59 @@ func TestHandler_handleHey(t *testing.T) {
 	})
 }
 
-func TestHandler_handleOk(t *testing.T) {
-	t.Parallel()
+func TestHandler_handleMachine(t *testing.T) {
+	// t.Parallel() // need to solve the migration issue here
 
 	t.Run("OK", func(t *testing.T) {
 		ctx := t.Context()
 
 		// deps
 		var (
-			db = testDB(t)
+			pool = testDB(t)
+
+			// do the migration here
+			d = &machine.DB{
+				RWC: pool,
+			}
+
+			m = &migrator{
+				pool: pool,
+				fsys: []fs.FS{machine.FS},
+			}
 		)
 
-		c, url := testClient(t, db, nil, nil)
+		err := m.up(ctx)
+		ok(t, err)
+		t.Cleanup(func() { m.down(context.Background()) })
 
-		res, err := c.get(ctx, "%s/ok", url)
+		c, url := testClient(t, d, nil, nil)
+
+		// post json
+		res, err := c.postJSON(ctx, nil, "%s/machines", url)
+		ok(t, err)
+		equal(t, res.StatusCode, http.StatusCreated)
+		// decode body for the machine
+		var created struct {
+			ID string `json:"id"`
+		}
+		err = json.NewDecoder(res.Body).Decode(&created)
+		ok(t, err)
+		ok(t, res.Body.Close())
+		// id cannot be empty
+
+		// fix helper
+		res, err = c.getJSON(ctx, "%s/machines/%s", url, created.ID)
 		ok(t, err)
 		equal(t, res.StatusCode, http.StatusOK)
+		var found struct {
+			ID    string        `json:"id"`
+			State machine.State `json:"state"`
+		}
+		err = json.NewDecoder(res.Body).Decode(&found)
+		ok(t, err)
 		ok(t, res.Body.Close())
+		equal(t, found.ID, created.ID)
+		equal(t, found.State, machine.StateCreating)
 	})
 }
 
@@ -161,11 +200,11 @@ func TestHandler_handleZIP(t *testing.T) {
 	})
 }
 
-func testClient(t testing.TB, dbConn *sql.DB, eveClient *eve.Client, cbzClient *cbz.Client) (*client, string) {
+func testClient(t testing.TB, machDB *machine.DB, eveClient *eve.Client, cbzClient *cbz.Client) (*client, string) {
 	t.Helper()
 
 	// start a new db for this + run migration
 
-	s := httptest.NewServer(Handler(dbConn, eveClient, cbzClient))
+	s := httptest.NewServer(Handler(machDB, eveClient, cbzClient))
 	return &client{s.Client()}, s.URL
 }

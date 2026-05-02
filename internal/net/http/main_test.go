@@ -1,26 +1,97 @@
 package http_test
 
 import (
+	"bytes"
 	"cmp"
 	"context"
-	"database/sql"
 	"embed"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/adoublef/hey/internal/cbz"
+	migrate "github.com/adoublef/hey/internal/database/postgres"
 	"github.com/adoublef/hey/internal/eve"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
+
+type migrator struct {
+	pool *pgxpool.Pool
+	fsys []fs.FS
+}
+
+func (m *migrator) up(ctx context.Context) error {
+	conn, err := m.pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	for _, fs := range m.fsys {
+		err = errors.Join(err, migrate.Up(ctx, conn.Conn(), fs))
+	}
+	return err
+}
+
+func (m *migrator) down(ctx context.Context) error {
+	conn, err := m.pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	for _, fs := range m.fsys {
+		err = errors.Join(err, migrate.Down(ctx, conn.Conn(), fs))
+	}
+	return err
+}
+
+var (
+	dockerImagePostgres string
+)
+
+func init() {
+	flag.StringVar(&dockerImagePostgres, "docker.image.postgres", "postgres:17-alpine", "postgres docker image")
+}
+
+func TestMain(m *testing.M) {
+	ctx := context.Background()
+
+	if err := setup(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	code := m.Run()
+	if err := teardown(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	} else if code > 0 {
+		os.Exit(code)
+	}
+}
+
+var postgresContainer *postgres.PostgresContainer
+
+func setup(ctx context.Context) (err error) {
+	postgresContainer, err = postgres.Run(ctx, dockerImagePostgres, postgres.BasicWaitStrategies())
+	return err
+}
+
+func teardown(ctx context.Context) error {
+	return postgresContainer.Terminate(ctx)
+}
 
 type client struct {
 	client *http.Client
@@ -29,6 +100,21 @@ type client struct {
 func (c *client) get(ctx context.Context, format string, v ...any) (*http.Response, error) {
 	req, err1 := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(format, v...), nil)
 	res, err2 := c.client.Do(req)
+	return res, cmp.Or(err1, err2)
+}
+
+func (c *client) getJSON(ctx context.Context, format string, v ...any) (*http.Response, error) {
+	req, err1 := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(format, v...), nil)
+	res, err2 := c.client.Do(req)
+	return res, cmp.Or(err1, err2)
+}
+
+func (c *client) postJSON(ctx context.Context, body any, format string, v ...any) (*http.Response, error) {
+	p, _ := json.Marshal(body)
+	req, err1 := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf(format, v...), bytes.NewReader(p))
+	req.Header.Set("Content-Type", "application/json")
+	res, err2 := c.client.Do(req)
+	// todo: decode the response
 	return res, cmp.Or(err1, err2)
 }
 
@@ -48,16 +134,22 @@ func ok(t testing.TB, errs ...error) {
 	}
 }
 
-func testDB(t testing.TB) *sql.DB {
+func testDB(t testing.TB) *pgxpool.Pool {
 	t.Helper()
+	ctx := t.Context()
 
-	dsn := filepath.Join(t.TempDir(), "test.db")
-
-	db, err := sql.Open("sqlite3", dsn)
+	dsn, err := postgresContainer.ConnectionString(ctx)
 	ok(t, err)
 
-	t.Cleanup(func() { db.Close() })
-	return db
+	cfg, err := pgxpool.ParseConfig(dsn)
+	ok(t, err)
+	cfg.MaxConns = 1
+
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	ok(t, err)
+
+	t.Cleanup(pool.Close)
+	return pool
 }
 
 func eveClient(t testing.TB, regions, max, orders int) (client *eve.Client, baseURL string) {

@@ -1,7 +1,7 @@
 package http
 
 import (
-	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,8 +11,10 @@ import (
 
 	"github.com/adoublef/hey/internal/cbz"
 	"github.com/adoublef/hey/internal/eve"
+	"github.com/adoublef/hey/internal/machine"
 	"github.com/adoublef/hey/internal/net/http/httputil"
 	"github.com/adoublef/hey/internal/net/http/status"
+	"github.com/google/uuid"
 )
 
 type Server = http.Server
@@ -23,16 +25,18 @@ func IsServeClosed(err error) bool {
 	return errors.Is(err, http.ErrServerClosed)
 }
 
-func Handler(dbConn *sql.DB, eveClient *eve.Client, cbzClient *cbz.Client) http.Handler {
+func Handler(machDB *machine.DB, eveClient *eve.Client, cbzClient *cbz.Client) http.Handler {
 	mux := http.NewServeMux()
 	f := func(pattern string, handler http.Handler) {
 		mux.Handle(pattern, handler)
 	}
 
 	f("GET /hey", handleHey())
-	f("GET /ok", handleOk(dbConn))
 	f("GET /csv", handleCSV(eveClient))
 	f("GET /zip", handleZIP(cbzClient))
+	f("POST /machines", handleAddMachine(machDB))
+	f("GET /machines/{machine}", handleMachine(machDB))
+	// runtime tracing endpoint?
 	return mux
 }
 
@@ -40,12 +44,6 @@ func handleHey() httputil.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		fmt.Fprintf(w, "Hey, 👋🏿!")
 		return nil
-	}
-}
-
-func handleOk(db *sql.DB) httputil.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) error {
-		return db.QueryRowContext(r.Context(), "SELECT 1").Err()
 	}
 }
 
@@ -104,7 +102,57 @@ func handleZIP(c *cbz.Client) httputil.HandlerFunc {
 	}
 }
 
+func handleAddMachine(d *machine.DB) httputil.HandlerFunc {
+	// parse json for extra metadata
+	type response struct {
+		ID uuid.UUID `json:"id"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx := r.Context()
+
+		id, err := d.Add(ctx, machine.Meta{State: machine.StateCreating})
+		if err != nil {
+			// status is depenant on the error returned from the database
+			return fmt.Errorf("failed to insert machine: %v: %w", err, status.Code(http.StatusFailedDependency))
+		}
+		// set the header here or elsewhere?
+		return respond(w, r, response{id}, http.StatusCreated)
+	}
+}
+
+func handleMachine(d *machine.DB) httputil.HandlerFunc {
+	parse := func(_ http.ResponseWriter, r *http.Request) (uuid.UUID, error) {
+		return uuid.Parse(r.PathValue("machine"))
+	}
+
+	type response struct {
+		ID    uuid.UUID     `json:"id"`
+		State machine.State `json:"state"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) error {
+		id, err := parse(w, r)
+		if err != nil {
+			return fmt.Errorf("failed to decode machine id: %v: %w", err, StatusBadRequest)
+		}
+		ctx := r.Context()
+
+		mach, err := d.Machine(ctx, id)
+		if err != nil {
+			// status is depenant on the error returned from the database
+			return fmt.Errorf("failed to find machine: %v: %w", err, status.Code(http.StatusFailedDependency))
+		}
+
+		return respond(w, r, response{mach.ID, mach.Meta.State}, http.StatusOK)
+	}
+}
+
 var (
 	StatusBadRequest          = status.Code(http.StatusBadRequest)
 	StatusUnprocessableEntity = status.Code(http.StatusUnprocessableEntity)
 )
+
+// respond sets application/json as Content-Type and sends the payload to client.
+func respond[V any](w http.ResponseWriter, _ *http.Request, v V, code int) error {
+	w.WriteHeader(code)
+	return json.NewEncoder(w).Encode(v)
+}
