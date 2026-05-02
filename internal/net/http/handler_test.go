@@ -23,7 +23,7 @@ func TestHandler_handleHey(t *testing.T) {
 	t.Run("OK", func(t *testing.T) {
 		ctx := t.Context()
 
-		c, url := testClient(t, nil, nil, nil)
+		c, url := newClient(t, nil, nil, nil)
 
 		res, err := c.get(ctx, "%s/hey", url)
 		ok(t, err)
@@ -44,7 +44,7 @@ func TestHandler_handleMachine(t *testing.T) {
 
 		// deps
 		var (
-			pool = testDB(t)
+			pool = newPool(t)
 
 			// do the migration here
 			d = &machine.DB{
@@ -61,10 +61,10 @@ func TestHandler_handleMachine(t *testing.T) {
 		ok(t, err)
 		t.Cleanup(func() { m.down(context.Background()) })
 
-		c, url := testClient(t, d, nil, nil)
+		c, url := newClient(t, d, nil, nil)
 
 		// post json
-		res, err := c.postJSON(ctx, nil, "%s/machines", url)
+		res, err := c.json(ctx, nil, "%s/machines", url)
 		ok(t, err)
 		equal(t, res.StatusCode, http.StatusCreated)
 		created, err := decode[struct {
@@ -73,7 +73,7 @@ func TestHandler_handleMachine(t *testing.T) {
 		ok(t, err)
 
 		// fix helper
-		res, err = c.getJSON(ctx, "%s/machines/%s", url, created.ID)
+		res, err = c.get(ctx, "%s/machines/%s", url, created.ID)
 		ok(t, err)
 		equal(t, res.StatusCode, http.StatusOK)
 		found, err := decode[struct {
@@ -85,7 +85,7 @@ func TestHandler_handleMachine(t *testing.T) {
 	})
 }
 
-func TestHandler_handleCSV(t *testing.T) {
+func TestHandler_handleOrders(t *testing.T) {
 	t.Parallel()
 
 	t.Run("OK", func(t *testing.T) {
@@ -98,7 +98,7 @@ func TestHandler_handleCSV(t *testing.T) {
 			eveClient, apiURL = eveClient(t, numOrders, numPages, numOrders)
 		)
 
-		c, url := testClient(t, nil, eveClient, nil)
+		c, url := newClient(t, nil, eveClient, nil)
 
 		res, err := c.get(ctx, "%s/evetech/orders?base_url=%s", url, apiURL)
 		ok(t, err)
@@ -132,8 +132,10 @@ func TestHandler_handleCSV(t *testing.T) {
 	})
 }
 
-func TestHandler_handleZIP(t *testing.T) {
+func TestHandler_handleCbz(t *testing.T) {
 	t.Parallel()
+
+	// 1. Handling potential errors
 
 	t.Run("OK", func(t *testing.T) {
 		ctx := t.Context()
@@ -144,7 +146,7 @@ func TestHandler_handleZIP(t *testing.T) {
 			cbzClient, apiURL = cbzClient(t, numChapters, numImages)
 		)
 
-		c, url := testClient(t, nil, nil, cbzClient)
+		c, url := newClient(t, nil, nil, cbzClient)
 
 		res, err := c.get(ctx, "%s/cbz?series_url=%s/series/1", url, apiURL)
 		ok(t, err)
@@ -192,11 +194,11 @@ func TestHandler_handleZIP(t *testing.T) {
 	})
 }
 
-func testClient(t testing.TB, machDB *machine.DB, eveClient *eve.Client, cbzClient *cbz.Client) (*client, string) {
+func newClient(t testing.TB, machDB *machine.DB, eveClient *eve.Client, cbzClient *cbz.Client) (*httpClient, string) {
 	t.Helper()
 
-	// start a new db for this + run migration
-
 	s := httptest.NewServer(Handler(machDB, eveClient, cbzClient))
-	return &client{s.Client()}, s.URL
+	t.Cleanup(s.Close)
+
+	return &httpClient{s.Client()}, s.URL
 }

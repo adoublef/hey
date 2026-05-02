@@ -127,7 +127,7 @@ func (c *Client) Chapter(ctx context.Context, u *url.URL, comp Compress) io.Read
 				if err := cmp.Or(err1, err2); err != nil {
 					return fmt.Errorf("failed %q request with status: %v", req.URL, err)
 				}
-				rc := http.MaxBytesReader(nil, res.Body, res.ContentLength)
+				rc := http.MaxBytesReader(nil, res.Body, min(res.ContentLength, 5<<20))
 				defer rc.Close()
 
 				if c := res.StatusCode; c != http.StatusOK {

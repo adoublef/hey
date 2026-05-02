@@ -17,7 +17,7 @@ type response struct {
 }
 
 // ReadFrom implements [ResponseWriter].
-func (w *response) ReadFrom(r io.Reader) (n int64, err error) {
+func (w *response) ReadFrom(r io.Reader) (int64, error) {
 	if !w.Written() {
 		w.WriteHeader(http.StatusOK)
 	}

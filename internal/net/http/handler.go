@@ -49,17 +49,17 @@ func handleHey() httputil.HandlerFunc {
 }
 
 func handleOrders(c *eve.Client) httputil.HandlerFunc {
-	parse := func(_ http.ResponseWriter, r *http.Request) (base *url.URL, hasHeader bool, err error) {
+	parse := func(_ http.ResponseWriter, r *http.Request) (base *url.URL, header bool, err error) {
 		u, err := url.Parse(r.URL.Query().Get("base_url"))
 		return u, false, err
 	}
 	return func(w http.ResponseWriter, r *http.Request) error {
-		u, _, err := parse(w, r)
+		u, header, err := parse(w, r)
 		if err != nil {
 			return fmt.Errorf("invalid request: %v: %w", err, StatusBadRequest)
 		}
 
-		cr := c.Orders(r.Context(), u)
+		cr := c.Orders(r.Context(), u, header)
 		defer cr.Close()
 
 		h := w.Header()

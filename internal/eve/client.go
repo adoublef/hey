@@ -50,7 +50,7 @@ type Client struct {
 	C *http.Client
 }
 
-func (c *Client) Orders(ctx context.Context, u *url.URL) io.ReadCloser {
+func (c *Client) Orders(ctx context.Context, u *url.URL, header bool) io.ReadCloser {
 	g, ctx := errgroup.WithContext(ctx)
 
 	regions := make(chan uint64)
@@ -164,6 +164,10 @@ func (c *Client) Orders(ctx context.Context, u *url.URL) io.ReadCloser {
 	pr, pw := io.Pipe()
 	g.Go(func() error {
 		cw := csv.NewWriter(pw)
+		// add header
+		if header {
+
+		}
 		for r := range records {
 			if err := cw.Write(r[:]); err != nil {
 				return err

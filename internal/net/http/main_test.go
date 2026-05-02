@@ -101,29 +101,34 @@ func decode[V any](r io.Reader) (v V, err error) {
 	return v, err
 }
 
-type client struct {
-	client *http.Client
+type httpClient struct {
+	/*
+	   | request   | response  | method    |
+	   | json      | json      | post      |
+	   | json      | none      | post      |
+	   | json      | stream    | post      |
+	   | none      | json      | get       |
+	   | none      | none      | get       |
+	   | none      | stream    | get       |
+	   | stream    | json      | post      |
+	   | stream    | none      | post      |
+	   | stream    | stream    | post      |
+	*/
+	*http.Client
 }
 
-func (c *client) get(ctx context.Context, format string, v ...any) (*http.Response, error) {
+func (c *httpClient) get(ctx context.Context, format string, v ...any) (*http.Response, error) {
 	req, err1 := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(format, v...), nil)
-	res, err2 := c.client.Do(req)
+	res, err2 := c.Do(req)
 	return res, cmp.Or(err1, err2)
 }
 
-func (c *client) getJSON(ctx context.Context, format string, v ...any) (*http.Response, error) {
-	req, err1 := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(format, v...), nil)
-	res, err2 := c.client.Do(req)
-	return res, cmp.Or(err1, err2)
-}
-
-func (c *client) postJSON(ctx context.Context, body any, format string, v ...any) (*http.Response, error) {
-	p, _ := json.Marshal(body)
-	req, err1 := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf(format, v...), bytes.NewReader(p))
+func (c *httpClient) json(ctx context.Context, body any, format string, v ...any) (*http.Response, error) {
+	p, err1 := json.Marshal(body)
+	req, err2 := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf(format, v...), bytes.NewReader(p))
 	req.Header.Set("Content-Type", "application/json")
-	res, err2 := c.client.Do(req)
-	// todo: decode the response
-	return res, cmp.Or(err1, err2)
+	res, err3 := c.Do(req)
+	return res, cmp.Or(err1, err2, err3)
 }
 
 func equal[T comparable](t testing.TB, got, want T) {
@@ -142,7 +147,7 @@ func ok(t testing.TB, errs ...error) {
 	}
 }
 
-func testDB(t testing.TB) *pgxpool.Pool {
+func newPool(t testing.TB) *pgxpool.Pool {
 	t.Helper()
 	ctx := t.Context()
 
