@@ -5,13 +5,9 @@ import (
 	"encoding/csv"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/adoublef/hey/internal/cbz"
-	"github.com/adoublef/hey/internal/eve"
 	"github.com/adoublef/hey/internal/machine"
-	. "github.com/adoublef/hey/internal/net/http"
 	"github.com/krolaw/zipstream"
 )
 
@@ -183,13 +179,4 @@ func TestHandler_handleCbz(t *testing.T) {
 		}
 		equal(t, i, numChapters)
 	})
-}
-
-func newClient(t testing.TB, machDB *machine.DB, eveClient *eve.Client, cbzClient *cbz.Client) (*client, string) {
-	t.Helper()
-
-	s := httptest.NewServer(Handler(machDB, eveClient, cbzClient))
-	t.Cleanup(s.Close)
-
-	return &client{s.Client()}, s.URL
 }

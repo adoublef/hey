@@ -23,6 +23,8 @@ import (
 	"github.com/adoublef/hey/internal/cbz"
 	migrate "github.com/adoublef/hey/internal/database/postgres"
 	"github.com/adoublef/hey/internal/eve"
+	"github.com/adoublef/hey/internal/machine"
+	. "github.com/adoublef/hey/internal/net/http"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
@@ -158,6 +160,15 @@ func newPool(t testing.TB) *pgxpool.Pool {
 
 	t.Cleanup(pool.Close)
 	return pool
+}
+
+func newClient(t testing.TB, machDB *machine.DB, eveClient *eve.Client, cbzClient *cbz.Client) (*client, string) {
+	t.Helper()
+
+	s := httptest.NewServer(Handler(machDB, eveClient, cbzClient))
+	t.Cleanup(s.Close)
+
+	return &client{s.Client()}, s.URL
 }
 
 func eveClient(t testing.TB, regions, max, orders int) (client *eve.Client, baseURL string) {
