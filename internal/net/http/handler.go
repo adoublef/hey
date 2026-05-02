@@ -1,6 +1,7 @@
 package http
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,8 +33,8 @@ func Handler(machDB *machine.DB, eveClient *eve.Client, cbzClient *cbz.Client) h
 	}
 
 	f("GET /hey", handleHey())
-	f("GET /csv", handleCSV(eveClient))
-	f("GET /zip", handleZIP(cbzClient))
+	f("GET /evetech/orders", handleOrders(eveClient))
+	f("GET /cbz", handleCbz(cbzClient))
 	f("POST /machines", handleAddMachine(machDB))
 	f("GET /machines/{machine}", handleMachine(machDB))
 	// runtime tracing endpoint?
@@ -47,7 +48,7 @@ func handleHey() httputil.HandlerFunc {
 	}
 }
 
-func handleCSV(c *eve.Client) httputil.HandlerFunc {
+func handleOrders(c *eve.Client) httputil.HandlerFunc {
 	parse := func(_ http.ResponseWriter, r *http.Request) (base *url.URL, hasHeader bool, err error) {
 		u, err := url.Parse(r.URL.Query().Get("base_url"))
 		return u, false, err
@@ -70,27 +71,28 @@ func handleCSV(c *eve.Client) httputil.HandlerFunc {
 	}
 }
 
-func handleZIP(c *cbz.Client) httputil.HandlerFunc {
-	parse := func(_ http.ResponseWriter, r *http.Request) (*url.URL, error) {
-		parsed, err := url.Parse(r.URL.Query().Get("series_url"))
-		if err != nil {
-			return nil, StatusBadRequest
+func handleCbz(c *cbz.Client) httputil.HandlerFunc {
+	parse := func(_ http.ResponseWriter, r *http.Request) (*url.URL, cbz.Compress, error) {
+		parsed, err1 := url.Parse(r.URL.Query().Get("series_url"))
+		comp, err2 := cbz.ParseCompress(cmp.Or(r.URL.Query().Get("compress"), cbz.Store.String()))
+		if err := cmp.Or(err1, err2); err != nil {
+			return nil, cbz.Store, StatusBadRequest
 		}
 		// ensure path is formatted explicitly as /[series]/[id]
 		path := strings.TrimPrefix(parsed.Path, "/")
 		first, rest, more := strings.Cut(path, "/")
 		if !more || first == "" || rest == "" || strings.Contains(rest, "/") {
-			return nil, StatusUnprocessableEntity
+			return nil, cbz.Store, StatusUnprocessableEntity
 		}
-		return parsed, nil
+		return parsed, comp, nil
 	}
 	return func(w http.ResponseWriter, r *http.Request) error {
-		u, err := parse(w, r)
+		u, comp, err := parse(w, r)
 		if err != nil {
 			return fmt.Errorf("inavlid request: %w", err)
 		}
 
-		zr := c.Series(r.Context(), u)
+		zr := c.Series(r.Context(), u, comp)
 		defer zr.Close()
 
 		h := w.Header()

@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"io"
 	"io/fs"
 	"net/http"
@@ -68,26 +67,19 @@ func TestHandler_handleMachine(t *testing.T) {
 		res, err := c.postJSON(ctx, nil, "%s/machines", url)
 		ok(t, err)
 		equal(t, res.StatusCode, http.StatusCreated)
-		// decode body for the machine
-		var created struct {
+		created, err := decode[struct {
 			ID string `json:"id"`
-		}
-		err = json.NewDecoder(res.Body).Decode(&created)
+		}](res.Body)
 		ok(t, err)
-		ok(t, res.Body.Close())
-		// id cannot be empty
 
 		// fix helper
 		res, err = c.getJSON(ctx, "%s/machines/%s", url, created.ID)
 		ok(t, err)
 		equal(t, res.StatusCode, http.StatusOK)
-		var found struct {
+		found, err := decode[struct {
 			ID    string        `json:"id"`
 			State machine.State `json:"state"`
-		}
-		err = json.NewDecoder(res.Body).Decode(&found)
-		ok(t, err)
-		ok(t, res.Body.Close())
+		}](res.Body)
 		equal(t, found.ID, created.ID)
 		equal(t, found.State, machine.StateCreating)
 	})
@@ -108,7 +100,7 @@ func TestHandler_handleCSV(t *testing.T) {
 
 		c, url := testClient(t, nil, eveClient, nil)
 
-		res, err := c.get(ctx, "%s/csv?base_url=%s", url, apiURL)
+		res, err := c.get(ctx, "%s/evetech/orders?base_url=%s", url, apiURL)
 		ok(t, err)
 
 		equal(t, res.StatusCode, http.StatusOK)
@@ -154,7 +146,7 @@ func TestHandler_handleZIP(t *testing.T) {
 
 		c, url := testClient(t, nil, nil, cbzClient)
 
-		res, err := c.get(ctx, "%s/zip?series_url=%s/series/1", url, apiURL)
+		res, err := c.get(ctx, "%s/cbz?series_url=%s/series/1", url, apiURL)
 		ok(t, err)
 		equal(t, res.StatusCode, http.StatusOK) // stream means this is always going to be the case
 

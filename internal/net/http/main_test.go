@@ -93,6 +93,14 @@ func teardown(ctx context.Context) error {
 	return postgresContainer.Terminate(ctx)
 }
 
+func decode[V any](r io.Reader) (v V, err error) {
+	err = json.NewDecoder(r).Decode(&v)
+	if c, ok := r.(io.Closer); ok {
+		err = errors.Join(err, c.Close())
+	}
+	return v, err
+}
+
 type client struct {
 	client *http.Client
 }
