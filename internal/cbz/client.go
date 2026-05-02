@@ -66,11 +66,11 @@ func (c *Client) Series(ctx context.Context, u *url.URL, comp Compress) io.ReadC
 		for u := range urls {
 			fh := &zip.FileHeader{
 				Name:     strconv.Itoa(count) + ".zip",
-				Method:   uint16(Store * 8),
+				Method:   uint16(comp * 8),
 				Modified: time.Now().UTC(),
 			}
 			w, err1 := zw.CreateHeader(fh)
-			_, err2 := io.CopyBuffer(w, c.Chapter(ctx, u), buf)
+			_, err2 := io.CopyBuffer(w, c.Chapter(ctx, u, comp), buf)
 			if err := cmp.Or(err1, err2); err != nil {
 				return err
 			}
@@ -170,7 +170,7 @@ func (c *Client) Chapter(ctx context.Context, u *url.URL, comp Compress) io.Read
 		for src := range bufs {
 			fh := &zip.FileHeader{
 				Name:     strconv.Itoa(count) + ".jpeg",
-				Method:   uint16(Store * 8),
+				Method:   uint16(comp * 8),
 				Modified: time.Now().UTC(),
 			}
 			w, err1 := zw.CreateHeader(fh)
