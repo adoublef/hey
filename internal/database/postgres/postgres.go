@@ -13,7 +13,7 @@ import (
 const defaultVersionTable string = "schema_version_non_default"
 
 var defaultMigrator = &migrate.MigratorOptions{
-	DisableTx: false, // true?
+	DisableTx: false,
 }
 
 func Up(ctx context.Context, conn *pgx.Conn, fs fs.FS) error {
