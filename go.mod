@@ -12,7 +12,6 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/jackc/tern/v2 v2.4.1
 	github.com/krolaw/zipstream v0.0.0-20241109034754-4a67be70fe31
-	github.com/mattn/go-sqlite3 v1.14.42
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 	go.adoublef.dev v0.12.0
 )
