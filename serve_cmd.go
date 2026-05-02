@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/adoublef/hey/internal/cbz"
+	"github.com/adoublef/hey/internal/eve"
 	"github.com/adoublef/hey/internal/flag/flagutil"
 	"github.com/adoublef/hey/internal/net/http"
 	"golang.org/x/sync/errgroup"
@@ -60,7 +62,7 @@ func (c *serveCmd) run(ctx context.Context, stderr io.Writer) error {
 
 	s := &http.Server{
 		Addr:    ":" + strconv.Itoa(c.port),
-		Handler: http.Handler(db),
+		Handler: http.Handler(db, &eve.Client{C: http.DefaultClient}, &cbz.Client{C: http.DefaultClient}),
 		// creating a new context on every rquest can work
 		// but would htis be very wasteful?
 		BaseContext: func(l net.Listener) context.Context { return ctx },
