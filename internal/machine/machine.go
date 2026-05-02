@@ -81,7 +81,7 @@ const (
 )
 
 func (s State) String() string {
-	return xiota.Format(s, states, StateFailed, StateStopping, 0)
+	return xiota.Format(s, states[:], StateFailed, StateStopping, 0)
 }
 
 func (s *State) UnmarshalText(p []byte) (err error) {
@@ -94,10 +94,10 @@ func (s State) MarshalText() ([]byte, error) {
 }
 
 func ParseState(s string) (State, error) {
-	return xiota.Parse[State](states, s, 0)
+	return xiota.Parse[State](states[:], s, 0)
 }
 
-var states = []string{
+var states = [...]string{
 	"failed",
 	"created",
 	"started",
