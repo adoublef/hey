@@ -3,7 +3,6 @@ package main
 import (
 	"cmp"
 	"context"
-	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,7 +14,9 @@ import (
 	"github.com/adoublef/hey/internal/cbz"
 	"github.com/adoublef/hey/internal/eve"
 	"github.com/adoublef/hey/internal/flag/flagutil"
+	"github.com/adoublef/hey/internal/machine"
 	"github.com/adoublef/hey/internal/net/http"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -51,18 +52,18 @@ func (c *serveCmd) parse(args []string, getenv func(string) string) (err error) 
 }
 
 func (c *serveCmd) run(ctx context.Context, stderr io.Writer) error {
-	db, err := sql.Open("sqlite3", c.dsn)
+	pool, err := pgxpool.New(ctx, c.dsn)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer pool.Close()
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	s := &http.Server{
 		Addr:    ":" + strconv.Itoa(c.port),
-		Handler: http.Handler(db, &eve.Client{C: http.DefaultClient}, &cbz.Client{C: http.DefaultClient}),
+		Handler: http.Handler(&machine.DB{RWC: pool}, &eve.Client{C: http.DefaultClient}, &cbz.Client{C: http.DefaultClient}),
 		// creating a new context on every rquest can work
 		// but would htis be very wasteful?
 		BaseContext: func(l net.Listener) context.Context { return ctx },

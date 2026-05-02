@@ -3,14 +3,18 @@ package main
 import (
 	"cmp"
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"io"
+
+	migrate "github.com/adoublef/hey/internal/database/postgres"
+	"github.com/adoublef/hey/internal/machine"
+	"github.com/jackc/pgx/v5"
 )
 
 type migrateCmd struct {
-	dsn string // db.path=/path/to/directory
+	dsn  string // db.path=/path/to/directory
+	down bool
 }
 
 func (c *migrateCmd) parse(args []string, getenv func(string) string) (err error) {
@@ -19,10 +23,11 @@ func (c *migrateCmd) parse(args []string, getenv func(string) string) (err error
 		defaultDSN = "" // current repo
 	)
 	fs.StringVar(&c.dsn, "dsn", defaultDSN, "database source name")
+	fs.BoolVar(&c.down, "down", false, "drop table state")
 	if err := fs.Parse(args); err != nil {
 		return err
 	} else if fs.NArg() > 0 {
-		return fmt.Errorf("usage: serve [-dsn]: %w", flag.ErrHelp)
+		return fmt.Errorf("usage: serve [-dsn|-down]: %w", flag.ErrHelp)
 	}
 
 	// if s := getenv("DATABASE_URL"); s != "" && c.dsn == defaultDSN {
@@ -33,18 +38,14 @@ func (c *migrateCmd) parse(args []string, getenv func(string) string) (err error
 }
 
 func (c *migrateCmd) run(ctx context.Context, stderr io.Writer) error {
-	db, err := sql.Open("sqlite3", c.dsn)
+	conn, err := pgx.Connect(ctx, c.dsn)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer conn.Close(context.Background())
 
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to acquire: %v", err)
+	if c.down {
+		return migrate.Down(ctx, conn, machine.FS)
 	}
-	defer conn.Close()
-
-	// Err() should work
-	return conn.QueryRowContext(ctx, "SELECT 1").Scan(new(int))
+	return migrate.Up(ctx, conn, machine.FS)
 }
