@@ -1,6 +1,9 @@
 package httputil
 
-import "net/http"
+import (
+	"io"
+	"net/http"
+)
 
 type ResponseWriter interface {
 	http.ResponseWriter
@@ -13,31 +16,49 @@ type response struct {
 	size   int
 }
 
-// Write implements [ResponseWriter].
-func (r *response) Write(b []byte) (int, error) {
-	if !r.Written() {
-		r.WriteHeader(http.StatusOK)
+// ReadFrom implements [ResponseWriter].
+func (w *response) ReadFrom(r io.Reader) (n int64, err error) {
+	if !w.Written() {
+		w.WriteHeader(http.StatusOK)
 	}
-	size, err := r.ResponseWriter.Write(b)
-	r.size += size
+	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+		size, err := rf.ReadFrom(r)
+		w.size += int(size)
+		return size, err
+	}
+	// use the fallback
+	return io.Copy(writerOnly{w}, r)
+}
+
+type writerOnly struct {
+	io.Writer
+}
+
+// Write implements [ResponseWriter].
+func (w *response) Write(b []byte) (int, error) {
+	if !w.Written() {
+		w.WriteHeader(http.StatusOK)
+	}
+	size, err := w.ResponseWriter.Write(b)
+	w.size += size
 	return size, err
 }
 
 // WriteHeader implements [ResponseWriter].
-func (r *response) WriteHeader(statusCode int) {
+func (w *response) WriteHeader(statusCode int) {
 	// Avoid panic if status code is not a valid HTTP status code
 	if statusCode < 100 || statusCode > 999 {
-		r.ResponseWriter.WriteHeader(500)
-		r.status = 500
+		w.ResponseWriter.WriteHeader(500)
+		w.status = 500
 		return
 	}
 
-	r.ResponseWriter.WriteHeader(statusCode)
-	r.status = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+	w.status = statusCode
 }
 
 // Written implements [ResponseWriter].
-func (r *response) Written() bool { return r.status != 0 }
+func (w *response) Written() bool { return w.status != 0 }
 
 func Wrap(w http.ResponseWriter) ResponseWriter {
 	if ww, ok := w.(ResponseWriter); ok {
