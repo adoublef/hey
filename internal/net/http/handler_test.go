@@ -194,11 +194,11 @@ func TestHandler_handleCbz(t *testing.T) {
 	})
 }
 
-func newClient(t testing.TB, machDB *machine.DB, eveClient *eve.Client, cbzClient *cbz.Client) (*httpClient, string) {
+func newClient(t testing.TB, machDB *machine.DB, eveClient *eve.Client, cbzClient *cbz.Client) (*client, string) {
 	t.Helper()
 
 	s := httptest.NewServer(Handler(machDB, eveClient, cbzClient))
 	t.Cleanup(s.Close)
 
-	return &httpClient{s.Client()}, s.URL
+	return &client{s.Client()}, s.URL
 }

@@ -101,7 +101,7 @@ func decode[V any](r io.Reader) (v V, err error) {
 	return v, err
 }
 
-type httpClient struct {
+type client struct {
 	/*
 	   | request   | response  | method    |
 	   | json      | json      | post      |
@@ -117,13 +117,13 @@ type httpClient struct {
 	*http.Client
 }
 
-func (c *httpClient) get(ctx context.Context, format string, v ...any) (*http.Response, error) {
+func (c *client) get(ctx context.Context, format string, v ...any) (*http.Response, error) {
 	req, err1 := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(format, v...), nil)
 	res, err2 := c.Do(req)
 	return res, cmp.Or(err1, err2)
 }
 
-func (c *httpClient) json(ctx context.Context, body any, format string, v ...any) (*http.Response, error) {
+func (c *client) json(ctx context.Context, body any, format string, v ...any) (*http.Response, error) {
 	p, err1 := json.Marshal(body)
 	req, err2 := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf(format, v...), bytes.NewReader(p))
 	req.Header.Set("Content-Type", "application/json")
