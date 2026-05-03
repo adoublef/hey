@@ -1,28 +1,65 @@
+mod error;
+
+use crate::{eve, net::http::error::Error};
 use axum::{
     Router,
-    extract::State,
+    body::Body,
+    extract::{Query, State},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{MethodRouter, get},
 };
-use http::StatusCode;
-use sqlx::{Pool, Sqlite};
-
-pub fn app(db: Pool<Sqlite>) -> Router {
-    Router::new()
-        .route("/", get(async || StatusCode::IM_A_TEAPOT))
-        .route("/hey", get(async || "Hey, 👋🏿!"))
-        .route("/ok", get(ok))
-        .with_state(AppState(db))
-}
-
-async fn ok(State(st): State<AppState>) -> Result<()> {
-    let _result = sqlx::query("SELECT 1").execute(&st.0).await?;
-
-    Ok(())
-}
+use http::{StatusCode, header};
+use serde::Deserialize;
+use url::Url;
 
 #[derive(Debug, Clone)]
-struct AppState(Pool<Sqlite>);
+struct AppState {
+    eve_client: eve::Client,
+}
+
+pub fn app(order_handler: eve::Client) -> Router {
+    let state = AppState {
+        eve_client: order_handler,
+    };
+    Router::new()
+        .merge(handle_orders())
+        //...
+        .with_state(state)
+}
+
+fn handle_orders() -> Router<AppState> {
+    #[derive(Deserialize)]
+    struct Params {
+        base_url: Url,
+    }
+
+    async fn handler(
+        State(state): State<AppState>,
+        Query(params): Query<Params>,
+    ) -> Result<impl IntoResponse> {
+        let stream = state.eve_client.orders(params.base_url);
+
+        let response = Response::builder()
+            .header(header::CONTENT_TYPE, mime::TEXT_CSV.essence_str())
+            .header(
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"evetech.csv\"",
+            )
+            .status(StatusCode::OK)
+            .body(Body::from_stream(stream))?;
+
+        Ok(response)
+    }
+
+    route("/", get(handler))
+}
+
+fn route<T>(path: &str, method_router: MethodRouter<T>) -> Router<T>
+where
+    T: Clone + Send + Sync + 'static,
+{
+    Router::<T>::new().route(path, method_router)
+}
 
 struct AppError(Error);
 
@@ -46,4 +83,3 @@ impl IntoResponse for AppError {
 }
 
 type Result<T, E = AppError> = core::result::Result<T, E>;
-type Error = Box<dyn std::error::Error>;
