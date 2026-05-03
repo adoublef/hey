@@ -1,5 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 use hey::{
+    eve,
     net::http::app,
     os::signal,
     runtime::{self},
@@ -103,7 +104,7 @@ impl Serve {
             // runtime error#1
             .map_err(|e| Error::Other(e.to_string()))?
             .block_on(async {
-                let conn = SqlitePool::connect_with(
+                let _conn = SqlitePool::connect_with(
                     SqliteConnectOptions::new()
                         .filename(&self.dsn) // this does not need to be set
                         .create_if_missing(true),
@@ -119,7 +120,7 @@ impl Serve {
 
                 let server_token = token.child_token();
                 let mut server_result = tokio::spawn(async move {
-                    axum::serve(listener, app(conn))
+                    axum::serve(listener, app(eve::Client::default()))
                         .with_graceful_shutdown(async move { server_token.cancelled().await })
                         .await
                 });
