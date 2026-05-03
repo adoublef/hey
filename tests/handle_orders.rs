@@ -10,10 +10,7 @@ use axum::{
 };
 use csv_async::AsyncReaderBuilder;
 use futures_util::TryStreamExt as _;
-use hey::{
-    eve::{Client, Order},
-    net::http::app,
-};
+use hey::{cbz, eve::Order, net::http::app};
 use http::{StatusCode, header};
 use std::io;
 use tokio::task::JoinSet;
@@ -37,8 +34,12 @@ async fn handle_stream_ok() -> Result<()> {
         test_app(num_regions, num_pages, num_orders),
     )
     .await?;
-    let (client, mut url) =
-        common::listen_and_serve(&mut set, token.clone(), app(Client { client })).await?;
+    let (client, mut url) = common::listen_and_serve(
+        &mut set,
+        token.clone(),
+        app(eve::Client { client }, cbz::Client::default()),
+    )
+    .await?;
 
     url.query_pairs_mut()
         .append_pair("base_url", api_url.as_str());
