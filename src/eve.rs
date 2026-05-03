@@ -132,26 +132,25 @@ impl Client {
                 .await
         });
 
-        let (tx, bytes) = mpsc::channel(1);
+        let (tx, mut bytes) = mpsc::channel(1);
         set.spawn(async move {
             let sink =
                 PollSender::new(tx).sink_map_err(|_| io::Error::from(io::ErrorKind::BrokenPipe));
             let writer = SinkWriter::new(CopyToBytes::new(sink));
 
-            let mut wri = AsyncWriterBuilder::new()
+            let mut writer = AsyncWriterBuilder::new()
                 .buffer_capacity(4 * 1 << 10) // default of the writer capacity
                 .create_writer(writer);
             let mut orders = ReceiverStream::new(orders);
             while let Some(order) = orders.next().await {
-                wri.write_record(order.to_record()).await?;
+                writer.write_record(order.to_record()).await?;
             }
-            wri.flush().await?;
+            writer.flush().await?;
             Ok(())
         });
 
         try_stream! {
-            let mut stream = ReceiverStream::new(bytes);
-            while let Some(bytes) = stream.next().await {
+            while let Some(bytes) = bytes.recv().await {
                 yield bytes
             }
             while let Some(res) = set.join_next().await {

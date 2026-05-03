@@ -1,6 +1,6 @@
 mod error;
 
-use crate::{eve, net::http::error::Error};
+use crate::{cbz, eve, net::http::error::Error};
 use axum::{
     Router,
     body::Body,
@@ -15,15 +15,17 @@ use url::Url;
 #[derive(Debug, Clone)]
 struct AppState {
     eve_client: eve::Client,
+    cbz_client: cbz::Client,
 }
 
-pub fn app(order_handler: eve::Client) -> Router {
+pub fn app(eve_client: eve::Client, cbz_client: cbz::Client) -> Router {
     let state = AppState {
-        eve_client: order_handler,
+        eve_client,
+        cbz_client,
     };
     Router::new()
         .merge(handle_orders())
-        //...
+        .merge(handle_weeb())
         .with_state(state)
 }
 
@@ -51,7 +53,38 @@ fn handle_orders() -> Router<AppState> {
         Ok(response)
     }
 
-    route("/", get(handler))
+    route("/evetech/orders", get(handler))
+}
+
+fn handle_weeb() -> Router<AppState> {
+    #[derive(Deserialize)]
+    struct Params {
+        series_url: Url,
+        deflate: Option<bool>,
+    }
+
+    async fn handler(
+        State(state): State<AppState>,
+        Query(params): Query<Params>,
+    ) -> Result<impl IntoResponse> {
+        let stream = state.cbz_client.series(params.series_url);
+
+        let response = Response::builder()
+            .header(
+                header::CONTENT_TYPE,
+                mime::APPLICATION_OCTET_STREAM.essence_str(),
+            )
+            .header(
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"weeb.zip\"",
+            )
+            .status(StatusCode::OK)
+            .body(Body::from_stream(stream))?;
+
+        Ok(response)
+    }
+
+    route("/cbz", get(handler))
 }
 
 fn route<T>(path: &str, method_router: MethodRouter<T>) -> Router<T>
