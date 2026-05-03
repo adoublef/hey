@@ -45,7 +45,7 @@ func TestHandler_handleMachine(t *testing.T) {
 			}
 		)
 
-		migrations(t, pool, machine.FS)
+		migrations(t, pool)
 
 		c, url := newClient(t, d, nil, nil)
 

@@ -1,8 +1,6 @@
 package machine_test
 
 import (
-	"context"
-	"io/fs"
 	"testing"
 
 	. "github.com/adoublef/hey/internal/machine"
@@ -19,13 +17,9 @@ func TestDB(t *testing.T) {
 			d = &DB{
 				RWC: pool,
 			}
-
-			m = &migrator{pool: pool, fsys: []fs.FS{FS}}
 		)
 
-		err := m.up(context.Background())
-		ok(t, err)
-		t.Cleanup(func() { m.down(context.Background()) })
+		migrations(t, pool)
 
 		meta := Meta{
 			State: StateCreating,

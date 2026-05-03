@@ -3,10 +3,8 @@ package machine_test
 import (
 	"cmp"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
 	"testing"
 
@@ -15,35 +13,26 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-type migrator struct {
-	pool *pgxpool.Pool
-	fsys []fs.FS
-}
+func migrations(t testing.TB, pool *pgxpool.Pool) {
+	t.Helper()
 
-func (m *migrator) up(ctx context.Context) error {
-	conn, err := m.pool.Acquire(ctx)
-	if err != nil {
-		return err
-	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		conn, err := pool.Acquire(ctx)
+		ok(t, err)
+		defer conn.Release()
+
+		err = migrate.Down(ctx, conn.Conn())
+		ok(t, err)
+	})
+
+	ctx := t.Context()
+	conn, err := pool.Acquire(ctx)
+	ok(t, err)
 	defer conn.Release()
 
-	for _, fs := range m.fsys {
-		err = errors.Join(err, migrate.Up(ctx, conn.Conn(), fs))
-	}
-	return err
-}
-
-func (m *migrator) down(ctx context.Context) error {
-	conn, err := m.pool.Acquire(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Release()
-
-	for _, fs := range m.fsys {
-		err = errors.Join(err, migrate.Down(ctx, conn.Conn(), fs))
-	}
-	return err
+	err = migrate.Up(ctx, conn.Conn())
+	ok(t, err)
 }
 
 var (

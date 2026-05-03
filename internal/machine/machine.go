@@ -3,7 +3,6 @@ package machine
 import (
 	"context"
 	"database/sql/driver"
-	"embed"
 	"encoding/json"
 	"errors"
 	"time"
@@ -12,9 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.adoublef.dev/xiota"
 )
-
-//go:embed all:*.sql
-var FS embed.FS
 
 type DB struct {
 	RWC *pgxpool.Pool

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,7 +28,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-func migrations(t testing.TB, pool *pgxpool.Pool, fsys ...fs.FS) {
+func migrations(t testing.TB, pool *pgxpool.Pool) {
 	t.Helper()
 
 	t.Cleanup(func() {
@@ -38,9 +37,7 @@ func migrations(t testing.TB, pool *pgxpool.Pool, fsys ...fs.FS) {
 		ok(t, err)
 		defer conn.Release()
 
-		for _, fs := range fsys {
-			err = errors.Join(err, migrate.Down(ctx, conn.Conn(), fs))
-		}
+		err = migrate.Down(ctx, conn.Conn())
 		ok(t, err)
 	})
 
@@ -49,9 +46,7 @@ func migrations(t testing.TB, pool *pgxpool.Pool, fsys ...fs.FS) {
 	ok(t, err)
 	defer conn.Release()
 
-	for _, fs := range fsys {
-		err = errors.Join(err, migrate.Up(ctx, conn.Conn(), fs))
-	}
+	err = migrate.Up(ctx, conn.Conn())
 	ok(t, err)
 }
 
