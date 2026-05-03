@@ -40,7 +40,6 @@ func TestHandler_handleMachine(t *testing.T) {
 		var (
 			pool = newPool(t)
 
-			// do the migration here
 			d = &machine.DB{
 				RWC: pool,
 			}
